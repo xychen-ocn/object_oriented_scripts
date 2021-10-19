@@ -31,8 +31,8 @@ classdef ATOMIC_dataProcess
         function ds_grouped = group_data_by_day_localtime(obj)
             
             ds = obj.Value;
-            tmin = floor(min(ds.time));
-            tmax = ceil(max(ds.time));
+            tmin = floor(min(ds.time))-1;
+            tmax = ceil(max(ds.time))+1;
             tarry = tmin:1:tmax;
             
             ds.local_time = ds.time - 4/24; 
@@ -82,29 +82,154 @@ classdef ATOMIC_dataProcess
             
         end
         
+        
+         %%%% ==================   function #1  ====================== %%%%        
+        %%%%% : regroup data by day (local time or UTC)
+        function ds_grouped = group_data_by_inputmask(obj, mask)
+            
+            ds = obj.Value;
+           
+            ds.local_time = ds.time - 4/24; 
+            [NY,NX] = size(ds.local_time);
+            if NY~=1
+                NT = NY;
+            else
+                NT = NX;
+            end
+        
+            ds_fieldn = fieldnames(ds);
+            
+            % now group data according to dates:
+            %obsv_timenum = [];
+            ids = mask;
+            for iv = 1:length(ds_fieldn)
+                varn = ds_fieldn{iv};
+                % need to do this according to the dimension of the
+                % variables:
+                [NY, NX] = size(ds.(varn));
+                if NY==NT
+                    if NX==1
+                        ds_grouped.(varn) = ds.(varn)(ids);
+                    else
+                        ds_grouped.(varn) = ds.(varn)(ids,:);
+                    end
+                elseif NX==NT
+                    if NY ==1
+                        ds_grouped.(varn) = ds.(varn)(ids);
+                    else
+                        ds_grouped.(varn) = ds.(varn)(:,ids);
+                    end
+                    %                             ds_grouped.(varn) = ds.(varn);
+                end
+                
+            end
+            %obsv_timenum(cnt) = tedges(i);
+               
+%             obj_new = obj;
+%             obj_new.Value = ds_grouped;
 
+            
+        end
+        
+        %%%% ================= function ===================== %%%%
+        %%%% purpose: make sure data doesn't have NaN values in the SST,
+        %%%% location and .
+        %%%% 
+        function obj_new = drop_bad_records(obj)
+            % this function is mainly for wave glider 245 that contains
+            % NaN;
+            data = obj.Value;
+            
+            valid_idx = find(isnan(data.lon)==0);
+            edgeIDs = find(diff(valid_idx)~=1); % the separation loc;
+            if length(valid_idx)<length(data.lon)
+               
+                disp('droping bad (NaN) records');
+                if ~isempty(edgeIDs)
+                dim1Dist = [edgeIDs(1); diff(edgeIDs);length(valid_idx)- edgeIDs(end)];
+                else 
+                    dim1Dist = [length(valid_idx)];
+                end
+                
+                fieldn = fieldnames(data);
+                for i = 1:length(fieldn)
+                    FN = fieldn{i};
+                    val = data.(FN);
+                    % the edgeIDs store the cutting point of the data record
+                    if iscolumn(data.lon)
+                        tmp= mat2cell(val(valid_idx),dim1Dist, 1);
+                    else
+                        tmp = mat2cell(val(valid_idx), 1, dim1Dist);
+                    end
+                    
+                    
+                    % store data in different ways:
+                    for j =1:length(tmp)
+                        data_new(j).(FN) = tmp{j};
+                    end
+                end
+                
+                
+                    
+                
+                obj_new = obj;
+                obj_new.Value = data_new;
+                
+            else
+                obj_new = obj;
+            end
+            
+        end
             
         %%%% =================   function #2   ===================== %%%%
         %%%% Purpose: compute distance traveled by the ship/instrument
         function obj = compute_distance_travelled(obj)
-            
+            % input is expected to be free of NaN..
             data = obj.Value;     % this is a matlab structure;
             
-            dlat = diff(data.lat);
-            dlon = diff(data.lon);
+            nseg = length(data);
+            for iseg=1:nseg
+                
+                dlat = diff(data(iseg).lat);
+                dlon = diff(data(iseg).lon);
+                
+                % average latitude between to consecutive ship locations:
+                mid_lat = 0.5*(data(iseg).lat(1:end-1) + data(iseg).lat(2:end));
+                xdist = abs(dlon) .* 111.*cosd(mid_lat);  % units: km
+                ydist = abs(dlat) .* 111;
+                
+                % construct trajectory coordinate, (0,0) at the first location of the
+                % ship.
+                %
+                if isrow(xdist)
+                    traj_x = [0, cumsum(xdist)];
+                    traj_y = [0, cumsum(ydist)];
+                else
+                    traj_x = [0; cumsum(xdist)];
+                    traj_y = [0; cumsum(ydist)];
+                end
+                traj = sqrt(traj_x.^2 + traj_y.^2);
+                
+                data(iseg).traj = traj;
+                
+                % add computation of the course of direction:
+                dy = dlat.* 111E3;
+                dx = dlon.* 111E3.*cosd(mid_lat);
+                
+                trajdir_cart_mid = atan2(dy,dx).*180/pi;
+                
+                traj_mid = 0.5*(traj(1:end-1)+traj(2:end));
+                
+                nanmask = isnan(trajdir_cart_mid);
+                trajdir_cart_mid(nanmask)=0;
+                
+                data(iseg).trajdir_cart = interp1(traj_mid, trajdir_cart_mid, traj, 'linear','extrap');
+                
+                
+            end
             
-            % average latitude between to consecutive ship locations:
-            mid_lat = 0.5*(data.lat(1:end-1) + data.lat(2:end));
-            xdist = abs(dlon) .* 111.*cosd(mid_lat);  % units: km
-            ydist = abs(dlat) .* 111;
+            % extrapolate the direction for the last data point:
             
-            % construct trajectory coordinate, (0,0) at the first location of the
-            % ship.
-            traj_x = [0, cumsum(xdist)];
-            traj_y = [0, cumsum(ydist)];
-            traj = sqrt(traj_x.^2 + traj_y.^2);
-            
-            data.traj = traj; 
             
             obj.Value = data;
         end
@@ -350,24 +475,39 @@ classdef ATOMIC_dataProcess
         function obj_new = map_to_distance_axis(obj, spatial_res)
             data = obj.Value;
             
-            spd_thres = 1;      % 1m/s-> 3.6km/hr;
-            moving_flag = get_ship_speed_mask(obj, spd_thres);
-            traj = data.traj(moving_flag);
-            dist_equal = [0:spatial_res:round(max(traj))];
-            
-            % interpolation for variaous values:
-            fieldn = fieldnames(data);
-            for i = 1:length(fieldn)
-                FN = fieldn{i};
-                tmp_val = data.(FN)(moving_flag);
-                data_interp.(FN) = interp1(traj, tmp_val, dist_equal);
+            for iseg = 1:length(data)
+                if strcmp(obj.ATOMIC_platform , 'RHB')
+                    spd_thres = 1;      % 1m/s-> 3.6km/hr;
+                    moving_flag = get_ship_speed_mask(obj, spd_thres);
+                else
+                    moving_flag = true(size(data(iseg).traj));
+                end
+                traj = data(iseg).traj(moving_flag);
+                dist_equal = [ceil(min(traj)):spatial_res:floor(max(traj))];
+                
+                % interpolation for variaous values:
+                fieldn = fieldnames(data(iseg));
+                for i = 1:length(fieldn)
+                    FN = fieldn{i};
+                    dimcrit = size(data(iseg).(FN)) == size(data(iseg).lon);
+                    
+                    if dimcrit
+                        tmp_val = data(iseg).(FN)(moving_flag);
+                        data_interp(iseg).(FN) = interp1(traj, tmp_val, dist_equal);
+                    end
+                    % skip variables that do not share the same dimension as
+                    % lon.
+                end
+                data_interp(iseg).distance_axis = dist_equal;
+                
+                
+                
+                
+                
             end
-            data_interp.distance_axis = dist_equal;
-            
-            
-            
             obj_new = obj;
             obj_new.Value = data_interp;
+            
         end
         
         
@@ -542,8 +682,294 @@ classdef ATOMIC_dataProcess
         end
         
         
+        %%%% ========= function: select data segments for SST-Wind correlation analysis.  ========= %%%%
+        % Purpose: 
+        function [data_segs] = select_straight_traj_segments(obj, crits, sstname )
+            
+            %
+            data = obj.Value;
+            
+            % 1. direction change <10°
+            trajdir_cart= data.trajdir_cart;
+            trajdir_cart(trajdir_cart<0) = trajdir_cart(trajdir_cart<0)+360;
+            
+            crit1 = true(size(trajdir_cart));
+            crit_tmp = cosd(diff(trajdir_cart))>=cosd(crits.ddir);
+            crit1(2:end) = crit_tmp;
+            
+            
+            % first break the data down to individual segments:
+            % do the segment separation with different along-wind,
+            % cross-wind criteria:
+            
+            
+            % locations of the data that satistied the criteria.
+            locIDs = find(crit1);
+            
+            % find the edge of different non-continuous segments:
+            edgeIDs = find(diff(locIDs)~=1);
+            if ~iscolumn(edgeIDs)
+                edgeIDs = edgeIDs';
+            end
+            
+             fieldn = fieldnames(data);
+             if ~isempty(locIDs)
+                 if ~isempty(edgeIDs)
+                     dimDist = [edgeIDs(1); diff(edgeIDs); length(locIDs) - edgeIDs(end)];
+                     
+                 else
+                     dimDist = [length(locIDs)];
+                 end
+                 for i = 1:length(fieldn)
+                     FN = fieldn{i};
+                     val = data.(FN);
+                     
+                     if iscolumn(data.traj)
+                         tmp = mat2cell(val(locIDs),dimDist, 1);
+                     else
+                         tmp = mat2cell(val(locIDs), 1, dimDist);
+                     end
+                     
+                     for k = 1:length(tmp)
+                         data_tmp(k).(FN) = tmp{k};
+                     end
+                     
+                 end
+             end
+            
+            figure
+            subplot(3,1,1)
+            
+            plot(data.traj, trajdir_cart,'.b');
+            hold on;
+            plot(data.traj, trajdir_cart,'-k');
+            set(gca,'fontsize',14);
+            
+            % for each segment, label it to be either a along-wind segment
+            % or a cross wind segement based on the misalignment angle.
+            % Note: a segment can not be both type.
+            
+            % 2. misalignment angle between the wind and the trajectory:
+            % wind direction is in the atmospheric convention:
+            wind_direction_name_list = {'wind_direction','wdir'};
+            wdir_name_bool = ismember(wind_direction_name_list, fieldn);
+            wdir_VN = wind_direction_name_list{wdir_name_bool};
+            
+            seg_label = zeros(length(dimDist),1);
+            for k = 1:length(dimDist)
+                trajdir_cart= data_tmp(k).trajdir_cart;
+                trajdir_cart(trajdir_cart<0) = trajdir_cart(trajdir_cart<0)+360;
+                
+                winddir_cart = get_cartesian_direction(data_tmp(k).(wdir_VN),'Meteo');
+                misang = abs(winddir_cart - trajdir_cart);
+                
+                plot(data_tmp(k).traj, misang,'-c');
+                plot(data_tmp(k).traj, ones(size(data_tmp(k).traj)).*(crits.misang),'--k');
+                plot(data_tmp(k).traj, ones(size(data_tmp(k).traj)).*(180-crits.misang),'--k');
+                
+                crit2 = (sind(misang)<=sind(crits.misang));   % 0~+/-crits.misang --> along_wind
+                
+                mask.along_wind =  crit2;
+                mask.crx_wind = ~crit2;
+                
+                along_wind_rec = numel(find(mask.along_wind));
+                crx_wind_rec = numel(find(mask.crx_wind));
+                
+                if along_wind_rec>crx_wind_rec
+                    % label segment as alongwind
+                    seg_label(k) = 1;
+                    plot(data_tmp(k).traj, trajdir_cart,'+r');
+                else
+                    seg_label(k) = 0;
+                    plot(data_tmp(k).traj, trajdir_cart,'*g');
+                end
+                
+                set(gca,'ytick',[0:90:360]);
+                grid on
+                
+                % compute segment length:
+                data_tmp(k).segment_length = data_tmp(k).traj(end) - data_tmp(k).traj(1);
+            end
+            title(obj.ATOMIC_platform);
+            
+            % separate segments into two cateogories based on the segment
+            % labels;
+            % in addition, drop the shorter segments.
+            crit3 = [data_tmp.segment_length]>=crits.length;       % longer than 150 km
+            crit3 = crit3';
+            mask.along_wind = (seg_label==1)&crit3;
+            mask.crx_wind = (seg_label==0);                       % the distance criterion on applies to the along-wind segments.
+            
+            
+            seg_type = fieldnames(mask);
+            for s = 1:length(seg_type)
+                ST = seg_type{s};
+                data_segs.(ST) = data_tmp(mask.(ST));
+                
+                % sanity check
+                subplot(3,1,s+1);
+                for k = 1:length(data_segs.(ST))
+                    hold on
+                    plot(data.lon, data.lat,'-k');
+
+                    scatter(data_segs.(ST)(k).lon, data_segs.(ST)(k).lat, 20, ...
+                        data_segs.(ST)(k).(sstname),'filled');
+                    theta = get_cartesian_direction(data_segs.(ST)(k).(wdir_VN),'Meteo');
+                    u = 0.01 .* cosd(theta);
+                    v = 0.01.* sind(theta);
+                    quiver(data_segs.(ST)(k).lon(1:4:end), data_segs.(ST)(k).lat(1:4:end),...
+                        u(1:4:end),v(1:4:end),'k');
+                end
+                axis('equal');
+                if s == 1
+                title(['along wind segments = ' num2str(length(data_segs.(ST)))]);
+                end
+                set(gca,'fontsize',14);
+                
+                
+                
+            end
+        end
         
+        %%%%% =========== function: re-orient data sequence so it points to 
+        %%%%% ===========            downwind direction.       ======= %%%%
+        function obj_new = reorient_data_sequence(obj)
+            % determine wheter or not the data sequence needs to be
+            % rotated:
+            data = obj.Value;
+            obj_new = obj;
+            
+            data_new = data;
+            
+            nsegs = length(data);
+            
+            wind_direction_name_list = {'wind_direction','wdir'};
+            fieldn = fieldnames(data);
+            wdir_name_bool = ismember(wind_direction_name_list, fieldn);
+            wdir_VN = wind_direction_name_list{wdir_name_bool};
+
+            
+            for iseg = 1:nsegs
+                
+                trajdir_cart = data(iseg).trajdir_cart;
+                winddir_cart = get_cartesian_direction(data(iseg).(wdir_VN),'Meteo');
+                
+                % compare the trajectory direction with the wind direction;
+                if cosd(trajdir_cart-winddir_cart)<0
+                    % rotate all the variables in the data object, except:
+                    % lat, lon, traj, time, local_time, trajdir_cart(what else?)
+                    excp_fields = {'lon','lat','traj','time','local_time','distance_axis'};
+                    fieldn = fieldnames(data(iseg));
+                    
+                    [ny, nx] = size(data(iseg).lon);
+                    
+                    for i = 1:length(fieldn)
+                        x = fieldn{i};
+                        if ~ismember(x, excp_fields)
+                            dimcrit = size(data(iseg).(x)) == size(data(iseg).lon);
+                            if dimcrit
+                                if iscolumn(data(iseg).(x))
+                                    data_new(iseg).(x) = flipud(data(iseg).(x));
+                                else
+                                    data_new(iseg).(x) = fliplr(data(iseg).(x));
+                                end
+                                
+                                figure(12);
+                                if strcmp(x, 'sea_water_temperature') || strcmp(x,'tsea') || strcmp(x,'wspd_10N')
+                                    plot(data(iseg).(x));
+
+                                    hold on;
+                                    plot(data_new(iseg).(x),'r');
+
+                                    hold off;
+                                pause
+                                end
+                                
+                            else
+                                % find out which dimension is the same;
+                                dimID = find(dimcrit==1);
+                                if dimID ==1
+                                    data_new(iseg).(x) = flipud(data(iseg).(x));
+                                else
+                                    data_new(iseg).(x) = fliplr(data(iseg).(x));
+                                end
+                                
+                            end
+                        end
+                    end
+                    disp(['seg#', num2str(iseg,'%2.2i') 'sequence re-oriented.']);
+
+                    
+                else
+                    disp('no need for re-orientation.');
+                end
+            end
+            
+            obj_new.Value = data_new;
+        end
         
+        %%%% =================   function #2b   ===================== %%%%
+        %%%% Purpose: project data onto the RHB or wave glider trajectory.
+        function  obj = project_wind_onto_trajectory(obj)
+            
+            data = obj.Value;
+            
+            nsegs = length(data);
+            
+            wind_direction_name_list = {'wind_direction','wdir'};
+            wind_speed_namelist = {'wind_speed','wspd_10N'};
+            
+            fieldn = fieldnames(data(1));
+            wdir_name_bool = ismember(wind_direction_name_list, fieldn);
+            wdir_VN = wind_direction_name_list{wdir_name_bool};
+            
+            wspd_name_bool = ismember(wind_speed_namelist, fieldn);
+            wspd_VN = wind_speed_namelist{wspd_name_bool};
+
+            
+            for iseg = 1:nsegs
+                
+                trajdir_cart = data(iseg).trajdir_cart;
+                trajdir_cart(trajdir_cart<0) = trajdir_cart(trajdir_cart<0)+360;
+
+                winddir_cart = get_cartesian_direction(data(iseg).(wdir_VN),'Meteo');
+                
+                dtheta = trajdir_cart - winddir_cart;
+                against_locs = cosd(dtheta)<0;
+                
+                ang = dtheta;
+                ang(against_locs) = (180-abs(dtheta(against_locs))).*sign(dtheta(against_locs));
+                
+                data(iseg).u_algtraj = data(iseg).(wspd_VN) .* cosd(ang);
+                data(iseg).v_crxtraj = data(iseg).(wspd_VN) .* sind(ang);
+                
+                % sanity check;
+                utmp = data(iseg).(wspd_VN) .* cosd(winddir_cart);
+                vtmp = data(iseg).(wspd_VN).* sind(winddir_cart);
+                
+                ualg_x = data(iseg).u_algtraj .* (cosd(trajdir_cart));
+                ualg_y = data(iseg).u_algtraj .* sind(trajdir_cart);
+                
+                ucrx_x = data(iseg).v_crxtraj .* (cosd(trajdir_cart-90));
+                ucrx_y = data(iseg).v_crxtraj .* sind(trajdir_cart-90);
+
+                
+                figure(10);
+                quiver(data(iseg).lon(1:5:end), data(iseg).lat(1:5:end), ...
+                    utmp(1:5:end), vtmp(1:5:end),'k');
+                hold on;
+                quiver(data(iseg).lon(1:5:end), data(iseg).lat(1:5:end), ...
+                    ualg_x(1:5:end), ualg_y(1:5:end),'r');
+                hold on;
+                quiver(data(iseg).lon(1:5:end), data(iseg).lat(1:5:end), ...
+                    ucrx_x(1:5:end), ucrx_y(1:5:end),'c');
+                pause
+            end
+            
+            obj.Value = data;
+            
+        end
+
         %%%%% =========== Utility function: saving an output;  ======= %%%%
         function save_data(obj, svdataInfo)
            absFN = [svdataInfo.svdir filesep svdataInfo.filename];      
