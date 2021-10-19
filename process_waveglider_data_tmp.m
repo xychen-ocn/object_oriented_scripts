@@ -90,11 +90,11 @@ for ik = 1:2
     WGs_obj2 = ATOMIC_dataProcess(WGs_obj.WG245(ik).Value);
     WGs_obj2.ATOMIC_platform=['WG245-part' num2str(ik)];
     
-%     WG245_segs(ik) = WGs_obj2.select_straight_traj_segments(crits,'sea_water_temperature');
-%     figname =[WGs_obj2.ATOMIC_platform '_breaking_down_data_crit-ddir' num2str(crits.ddir) ...
-%      '_crit-misang' num2str(crits.misang) '_crit-length' num2str(crits.length) '.jpg'];
-%     xc_savefig(gcf,figsvdir, figname, [0 0 12 10]);
-%     
+    %     WG245_segs(ik) = WGs_obj2.select_straight_traj_segments(crits,'sea_water_temperature');
+    %     figname =[WGs_obj2.ATOMIC_platform '_breaking_down_data_crit-ddir' num2str(crits.ddir) ...
+    %      '_crit-misang' num2str(crits.misang) '_crit-length' num2str(crits.length) '.jpg'];
+    %     xc_savefig(gcf,figsvdir, figname, [0 0 12 10]);
+    %
     %  need to determine whether or not the segment needs to be re-oriented
     % (this will be done using the dataProcess class;)
     if ~isempty(WG245_segs(ik).along_wind)
@@ -105,14 +105,16 @@ for ik = 1:2
         % interpolate data to a equally spaced distance axis;
         xres = 1;   % units: km
         WG245_alongwind_segobj_remapped = WG245_alongwind_segobj.map_to_distance_axis(xres);
-
+        
+        % save the processed data from above:
+        svdataname = [WG245_alongwind_segobj.ATOMIC_platform '_along_wind_segments_ready_for_wavelet_coherence.mat'];
+        save([svdatadir filesep svdataname],'WG245_alongwind_segobj','WG245_segs','WG245_alongwind_segobj_remapped');
+        
+        
     end
-   % pause
+    % pause
 end
 
-% save the processed data from above:
-svdataname = [WG245_alongwind_segobj.ATOMIC_platform '_along_wind_segments_ready_for_wavelet_coherence.mat'];
-save([svdatadir filesep svdataname],'WG245_alongwind_segobj','WG245_segs','WG245_alongwind_segobj_remapped');
 
 %% put these segment into the wavelet coherence scripts:
 
@@ -128,6 +130,7 @@ for iseg = 1:length(inobj.Value)
     ts2 = inobj.Value(iseg).(wind_varn);
     traj = inobj.Value(iseg).distance_axis;
     time = inobj.Value(iseg).time;
+    
 
     ATOMIC_platform = inobj.ATOMIC_platform;
     
@@ -135,7 +138,7 @@ for iseg = 1:length(inobj.Value)
     labelstr.ts2 = {'along-traj.','wind speed (m/s)'}; %'along-traj.';
 
     %%% 0. establish the wavelet object for each glider:
-    WG_wtcobj = ATOMIC_Wavelet(ts1, ts2, traj, time, ATOMIC_platform);
+    WG_wtcobj = ATOMIC_Wavelet(ts1, ts2, traj, time, ATOMIC_platform, xres);
     hfig0 = WG_wtcobj.plot_data(labelstr);
     xc_savefig(hfig0,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
         '_SST_' wind_varn '_record.jpg'], [0, 0, 10 8]);
@@ -150,8 +153,13 @@ for iseg = 1:length(inobj.Value)
     
     %%% 2. apply the wave coherence toolbox:
        % [hfigs, wtc_stat(iseg)] = WG247_wtcobj.wavelet_coherence_toolbox;
-
-    [hfigs, WG_wtc_stat(iseg)] = WG_wtcobj_trans.wavelet_coherence_toolbox;
+    tmpN = strsplit(ATOMIC_platform,'-');
+    PN = [];
+    for k = 1:length(tmpN)
+        PN = [PN tmpN{k}];
+    end
+    
+    [hfigs, WG_wtc_stat.(PN)(iseg), WG_outCOI_stat.(PN)(iseg), WG_inCOI_stat.(PN)(iseg)] = WG_wtcobj_trans.wavelet_coherence_toolbox;
 
     figure(hfigs.Number);
     title([ATOMIC_platform ': ' datestr(time(1)) '~' datestr(time(end))]);
@@ -165,6 +173,7 @@ for iseg = 1:length(inobj.Value)
     
     
     
+    
     %% make use of information obtained from wtc_stat:
     
     
@@ -172,6 +181,10 @@ for iseg = 1:length(inobj.Value)
     
 end
 
+
+% save output for plotting purpose;
+svdataname = ['WGs_wavecoherence_stat_SST_and_' wind_varn '.mat'];
+save([svdatadir filesep svdataname],'WG_wtc_stat','WG_outCOI_stat','WG_inCOI_stat');
 
 %% note: several thing to be tested:
 % 1. what resolution should be used for the interpolation? will it affect
