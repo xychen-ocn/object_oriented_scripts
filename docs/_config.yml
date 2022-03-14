@@ -16,13 +16,13 @@ minimal_mistakes_skin    : "dark" # "air", "aqua", "contrast", "dark", "dirt", "
 
 # Site Settings
 locale                   : "en-US"
-title                    : "Xuanyu's Project Space"
+title                    : "ATOMIC Project Space"
 title_separator          : "-"
 subtitle                 : "Version 0.0: under construction" # site tagline that appears below site title in masthead
 name                     : "Xuanyu Chen"
 description              : "This site is currently under construction~ If you insist to take a peek, please wear a helmet for your safety and tolerate the messiness."
 url                      : "https://xychen-ocn.github.io"  # the base hostname & protocol for your site e.g. "https://mmistakes.github.io"
-baseurl                  :     # the subpath of your site, e.g. "/blog"
+baseurl                  : "object_oriented_scripts"    # the subpath of your site, e.g. "/blog"
 repository               : "xychen-ocn/xychen-ocn.github.io" # GitHub username/repo-name e.g. "mmistakes/minimal-mistakes"
 teaser                   : # path of fallback teaser image, e.g. "/assets/images/500x300.png"
 logo                     : # path of logo image to display in the masthead, e.g. "/assets/images/88x88.png"
