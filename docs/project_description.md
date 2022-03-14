@@ -1,5 +1,8 @@
+---
 title: "ATOMIC SST-surface wind analysis project"
+layout: single
 permalink: /object_oriented_scripts/
+---
 
 
 # About this github repository

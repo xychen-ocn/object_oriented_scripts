@@ -1,0 +1,14 @@
+# main links
+main:
+  - title: "About me"
+    url: /about/
+  - title: "Projects"
+    url: /projects-home/
+  - title: "Posts"
+    url: /categories-posts/
+  - title: "Contact"
+    url: /contact/
+  # - title: "Sample Collections"
+  #   url: /collection-archive/
+  # - title: "Sitemap"
+  #   url: /sitemap/
