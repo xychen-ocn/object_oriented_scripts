@@ -379,7 +379,7 @@ classdef ATOMIC_dataProcess
             % plot time series out instead (time-series of SST, wind speed,
             % and wind direction)
             function sanity_check_results
-                fignum = hfig_check.Number;
+                fignum = figInfo.Number;
                 figure(fignum); hold on;
                 % plot both the segment identified and other properties
                 % associated with the segments:
@@ -463,9 +463,10 @@ classdef ATOMIC_dataProcess
                     mkdir(figsvdir);
                 end
                 DN = datestr(dataIn.local_time(1),'mmmdd');
-
+                if figInfo.save
                 figname = [DN '_SSTgrad_segment_v0_lowpassed.jpg']
                 xc_savefig(gcf, figsvdir, figname, [0 0 14 10]);
+                end
             end
             
         end
@@ -533,11 +534,11 @@ classdef ATOMIC_dataProcess
          traj = data.traj(moving_flag);
          dist_equal = [0:spatial_res:round(max(traj))];                         % units: km
          SST_interp = interp1(traj, sst ,dist_equal,'linear', 'extrap');
-         U10_interp = interp1(traj, data.wspd_10N(moving_flag),  dist_equal, 'linear');
+         U10_interp = interp1(traj, data.wspd_10N(moving_flag),  dist_equal, 'linear','extrap');
          
          % the wind direction is likely not sensitive to the speed of the
          % ship(?)
-         data.ship_wind_angle_interp  = interp1(data.xmid, data.ship_wind_angle, dist_equal);
+         %data.ship_wind_angle_interp  = interp1(data.xmid, data.ship_wind_angle, dist_equal);
          
          
          %%%%%%%%--> step 2:
@@ -662,7 +663,7 @@ classdef ATOMIC_dataProcess
             function data_lowpassed = lowpass_filter(data, wvlen_cutoff, spatial_res)
                 % input data is expected to be equally spaced.
                 %%% -- detrend:
-                data_interp_dtr = detrend(data,1);                                % detrend (I don't need this.)
+                data_interp_dtr = detrend(data,1,'omitnan');                                % detrend (I don't need this.)
                 trend_linear_ = data - data_interp_dtr;
                 
                 
@@ -790,7 +791,7 @@ classdef ATOMIC_dataProcess
                 % compute segment length:
                 data_tmp(k).segment_length = data_tmp(k).traj(end) - data_tmp(k).traj(1);
             end
-            title(obj.ATOMIC_platform);
+            title([obj.ATOMIC_platform], [datestr(data_tmp(1).time(1)) ' ~ ' datestr(data_tmp(end).time(end))]);
             
             % separate segments into two cateogories based on the segment
             % labels;
@@ -808,6 +809,7 @@ classdef ATOMIC_dataProcess
                 
                 % sanity check
                 subplot(3,1,s+1);
+                if ~isempty(data_segs.(ST))
                 for k = 1:length(data_segs.(ST))
                     hold on
                     plot(data.lon, data.lat,'-k');
@@ -819,14 +821,18 @@ classdef ATOMIC_dataProcess
                     v = 0.01.* sind(theta);
                     quiver(data_segs.(ST)(k).lon(1:4:end), data_segs.(ST)(k).lat(1:4:end),...
                         u(1:4:end),v(1:4:end),'k');
+                    text(mean(data_segs.(ST)(k).lon), mean(data_segs.(ST)(k).lat)-0.02, ...
+                        ['seg' num2str(k)],'fontsize',12);
+                    plot(data_segs.(ST)(k).lon(1), data_segs.(ST)(k).lat(1),'*m','markersize',13);
                 end
                 axis('equal');
                 if s == 1
-                title(['along wind segments = ' num2str(length(data_segs.(ST)))]);
+                title(['along wind segments = ' num2str(length(data_segs.(ST)))], ...
+                    [datestr(data_segs.(ST)(1).time(1)) ' ~ ' datestr(data_segs.(ST)(end).time(end))]);
                 end
                 set(gca,'fontsize',14);
                 
-                
+                end
                 
             end
         end
@@ -910,11 +916,23 @@ classdef ATOMIC_dataProcess
         
         %%%% =================   function #2b   ===================== %%%%
         %%%% Purpose: project data onto the RHB or wave glider trajectory.
-        function  obj = project_wind_onto_trajectory(obj)
+        function  obj = project_wind_onto_trajectory(obj, opt)
+            switch nargin
+                
+                case 1
+                    copt = false;
+                    %wopt = true;
+                case 2
+                    copt = opt;
+                   % wopt = true;
+                
+            end
+            
             
             data = obj.Value;
             
             nsegs = length(data);
+            
             
             wind_direction_name_list = {'wind_direction','wdir'};
             wind_speed_namelist = {'wind_speed','wspd_10N'};
@@ -925,36 +943,68 @@ classdef ATOMIC_dataProcess
             
             wspd_name_bool = ismember(wind_speed_namelist, fieldn);
             wspd_VN = wind_speed_namelist{wspd_name_bool};
-
             
             for iseg = 1:nsegs
+                [wu_alg, wv_crx] = compute_algtraj_crxtraj_velocity_component(wspd_VN, wdir_VN);
+                data(iseg).u_algtraj = wu_alg;
+                data(iseg).v_crxtraj = wv_crx;
+            end
+            
+            
+            if copt   % project current as well:  % no current from the wave glider.
+                current_speed_namelist = {'cspd','drift_speed'};
+                current_direction_namelist = {'cdir','drift_direction'};
                 
+                fieldn = fieldnames(data(1));
+                cdir_name_bool = ismember(current_direction_namelist, fieldn);
+                cdir_VN = current_direction_namelist{cdir_name_bool};
+                
+                cspd_name_bool = ismember(current_speed_namelist, fieldn);
+                cspd_VN = current_speed_namelist{cspd_name_bool};
+                
+                for iseg = 1:nsegs
+                    [cu_alg, cv_crx]=compute_algtraj_crxtraj_velocity_component(cspd_VN, cdir_VN);
+                    data(iseg).cu_algtraj = cu_alg;
+                    data(iseg).cv_crxtraj = cv_crx;
+                end
+            end
+                
+            obj.Value = data;
+            
+           %% turn the following code into a nested function:           
+           % for iseg = 1:nsegs
+            function [u_algtraj, v_crxtraj]=compute_algtraj_crxtraj_velocity_component(spd_VN, dir_VN)   
                 trajdir_cart = data(iseg).trajdir_cart;
                 trajdir_cart(trajdir_cart<0) = trajdir_cart(trajdir_cart<0)+360;
 
-                winddir_cart = get_cartesian_direction(data(iseg).(wdir_VN),'Meteo');
+                % although the variable name is called "wind direction" it
+                % also stores the current direction information in it. 
+                dir_cart = get_cartesian_direction(data(iseg).(dir_VN),'Meteo');
                 
-                dtheta = trajdir_cart - winddir_cart;
+                dtheta = trajdir_cart - dir_cart;
                 against_locs = cosd(dtheta)<0;
-                
+             
                 ang = dtheta;
-                ang(against_locs) = (180-abs(dtheta(against_locs))).*sign(dtheta(against_locs));
+                %ang(against_locs) = (180-abs(dtheta(against_locs))).*sign(dtheta(against_locs));  % I doubt this again.
+                ang(against_locs) = (dtheta(against_locs));                % updated to this version (Jan 24, 2022, the wind direction of the project along traj seems correct this way.
                 
-                data(iseg).u_algtraj = data(iseg).(wspd_VN) .* cosd(ang);
-                data(iseg).v_crxtraj = data(iseg).(wspd_VN) .* sind(ang);
+                u_algtraj = data(iseg).(spd_VN) .* cosd(ang);              % <0
+                v_crxtraj = data(iseg).(spd_VN) .* sind(ang);              % > 0?
                 
                 % sanity check;
-                utmp = data(iseg).(wspd_VN) .* cosd(winddir_cart);
-                vtmp = data(iseg).(wspd_VN).* sind(winddir_cart);
+                utmp = data(iseg).(spd_VN) .* cosd(dir_cart);
+                vtmp = data(iseg).(spd_VN).* sind(dir_cart);
                 
-                ualg_x = data(iseg).u_algtraj .* (cosd(trajdir_cart));
-                ualg_y = data(iseg).u_algtraj .* sind(trajdir_cart);
+                ualg_x = u_algtraj .* (cosd(trajdir_cart));                % is the direction of this correct??
+                ualg_y = u_algtraj .* sind(trajdir_cart);
                 
-                ucrx_x = data(iseg).v_crxtraj .* (cosd(trajdir_cart-90));
-                ucrx_y = data(iseg).v_crxtraj .* sind(trajdir_cart-90);
+                ucrx_x = v_crxtraj .* (cosd(trajdir_cart-90));
+                ucrx_y = v_crxtraj .* sind(trajdir_cart-90);
+                
+               
 
                 
-                figure(10);
+                figure(10);clf;
                 quiver(data(iseg).lon(1:5:end), data(iseg).lat(1:5:end), ...
                     utmp(1:5:end), vtmp(1:5:end),'k');
                 hold on;
@@ -963,12 +1013,96 @@ classdef ATOMIC_dataProcess
                 hold on;
                 quiver(data(iseg).lon(1:5:end), data(iseg).lat(1:5:end), ...
                     ucrx_x(1:5:end), ucrx_y(1:5:end),'c');
+                title({[spd_VN '; iseg=', num2str(iseg)];[datestr(data(iseg).time(1))]});
+                axis('equal');
                 pause
             end
             
-            obj.Value = data;
+            
             
         end
+        
+        %%%% =================   function # ??   ===================== %%%%
+        %%%% Purpose: compute the along-traj Rossby number from the surface
+        %%%% current measurements. Ro = eta/f; eta_algtraj = dv_crstraj/dx 
+        %%%% x: along trajectory direction, y: cross-trajectory direction.
+        %%%% Date: Jan 24, 2022
+        
+        function obj_new = compute_along_traj_current_relative_vorticity_and_Ro(obj)
+            
+            % note: input obj only has 1 segment. 
+            % project velocity on to the trajectory and find the
+            % corresponding u_algtraj, v_crxtraj component
+            % better to call a function for this purpose.
+            omg = 2*pi/86400;   % rad/s
+            curflag = true;
+            obj = project_wind_onto_trajectory(obj, curflag);
+            
+            obj_new = obj;
+
+            data = obj.Value;
+            nsegs = length(data);
+            
+            for iseg = 1:nsegs
+                distance = data(iseg).distance_axis;
+                
+                % take out the current velocity:
+                %cur_alg = data.cu_algtraj;
+                cur_crx = data(iseg).cv_crxtraj;
+                
+                
+                % compute the vertical vorticity along trajectory
+                % finite difference, (the vorticitiiy is computed at the
+                % mid-point of the distance axis.)
+                dist_mid = 0.5*(distance(1:end-1)+distance(2:end));
+                eta_algtraj_mid = diff(cur_crx)./(diff(distance)*1E3);
+                
+                % interpolate back to the same grid as the "traj" variable.
+                eta_algtraj = interp1(dist_mid, eta_algtraj_mid, distance);
+                
+                
+                % normalize the vertical vorticity by the Coriolis
+                % parameter:
+                f = 2*omg*sind(data(iseg).lat);
+                Ro = eta_algtraj./f;
+                data(iseg).vort_algtraj = eta_algtraj;
+                data(iseg).Ro = Ro;
+            end
+            
+           obj_new.Value = data;
+
+                
+            
+        end
+        
+        
+        %%%% =================   function # ??   ===================== %%%%
+        %%%% Purpose: break long data down into sections
+%         function obj_p = break_record_into_pieces(obj, l)
+%             % input: l: length of each pieces
+%             for i = 1:length(obj)
+%                 data = obj(i).Value;
+%                 
+%                 seglen = data.segment_length;
+%                 
+%                 ndiv = 2;   % starting with this basic dividing number
+%                 operation_flag = true;
+%                 
+%                 if seglen>150
+%                     % require operation
+%                     while operation_flag
+%                         
+%                     end
+%                     
+%                 else
+%                    % keep as is and count as a segment.
+%                    obj_p(cnt).data = ;
+%                 end
+%                 
+%             end
+%             
+%         end
+       
 
         %%%%% =========== Utility function: saving an output;  ======= %%%%
         function save_data(obj, svdataInfo)

@@ -78,8 +78,8 @@ WG247_alongwind_segobj = WGs_obj2;
 WG247_alongwind_segobj.Value = WG247_segs.along_wind;
 WG247_alongwind_segobj = WG247_alongwind_segobj.project_wind_onto_trajectory;
 WG247_alongwind_segobj = WG247_alongwind_segobj.reorient_data_sequence;
-xres = 1;   % units: km
-WG247_alongwind_segobj_remapped = WG247_alongwind_segobj.map_to_distance_axis(xres);
+WGs_xres = 1;   % units: km
+WG247_alongwind_segobj_remapped = WG247_alongwind_segobj.map_to_distance_axis(WGs_xres);
 
 svdataname = [WG247_alongwind_segobj.ATOMIC_platform '_along_wind_segments_ready_for_wavelet_coherence.mat'];
 save([svdatadir filesep svdataname],'WG247_alongwind_segobj','WG247_segs','WG247_alongwind_segobj_remapped');
@@ -103,8 +103,8 @@ for ik = 1:2
         WG245_alongwind_segobj = WG245_alongwind_segobj.project_wind_onto_trajectory;
         WG245_alongwind_segobj = WG245_alongwind_segobj.reorient_data_sequence;
         % interpolate data to a equally spaced distance axis;
-        xres = 1;   % units: km
-        WG245_alongwind_segobj_remapped = WG245_alongwind_segobj.map_to_distance_axis(xres);
+        WGs_xres = 1;   % units: km
+        WG245_alongwind_segobj_remapped = WG245_alongwind_segobj.map_to_distance_axis(WGs_xres);
         
         % save the processed data from above:
         svdataname = [WG245_alongwind_segobj.ATOMIC_platform '_along_wind_segments_ready_for_wavelet_coherence.mat'];
@@ -116,75 +116,110 @@ for ik = 1:2
 end
 
 
-%% put these segment into the wavelet coherence scripts:
+% check the average segment length;  300 ~550km, 2segs less than 150m  
+WG_seglens = [];
+for iwg = 1:2
+    WGN = WGs_name{iwg};
+    eval(['inobj = ' WGN '_alongwind_segobj_remapped;']);     % how would the sampling resolution and remapping resolution change the results?
 
-
-inobj = WG245_alongwind_segobj_remapped;     % how would the sampling resolution and remapping resolution change the results?
-
-wind_varn = 'wind_direction';
-for iseg = 1:length(inobj.Value)
-    %validID = ~isnan(ts1);
-    ts1 =inobj.Value(iseg).sea_water_temperature;
-    %ts1= ts1
-    %ts2 = WG247_alongwind_segobj_remapped.Value(iseg).wind_speed;
-    ts2 = inobj.Value(iseg).(wind_varn);
-    traj = inobj.Value(iseg).distance_axis;
-    time = inobj.Value(iseg).time;
-    
-
-    ATOMIC_platform = inobj.ATOMIC_platform;
-    
-    labelstr.ts1 = 'SST (^{\circ}C)';
-    labelstr.ts2 = {'along-traj.','wind speed (m/s)'}; %'along-traj.';
-
-    %%% 0. establish the wavelet object for each glider:
-    WG_wtcobj = ATOMIC_Wavelet(ts1, ts2, traj, time, ATOMIC_platform, xres);
-    hfig0 = WG_wtcobj.plot_data(labelstr);
-    xc_savefig(hfig0,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
-        '_SST_' wind_varn '_record.jpg'], [0, 0, 10 8]);
-
-    
-    %%% 1. apply box-cox transform on the data to have normal distribution;
-    [WG_wtcobj_trans, hfig1] = WG_wtcobj.transform_to_normal_distribution(labelstr);
-    
-    xc_savefig(hfig1,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
-        '_SST'  wind_varn  '_record_transformed_boxcox.jpg'], [0, 0, 10 8]);
-    
-    
-    %%% 2. apply the wave coherence toolbox:
-       % [hfigs, wtc_stat(iseg)] = WG247_wtcobj.wavelet_coherence_toolbox;
-    tmpN = strsplit(ATOMIC_platform,'-');
-    PN = [];
-    for k = 1:length(tmpN)
-        PN = [PN tmpN{k}];
+    for i = 1:length(inobj.Value)
+        sl = inobj.Value(i).traj(end) - inobj.Value(i).traj(1);
+        WG_seglens = [WG_seglens, sl];
     end
-    
-    [hfigs, WG_wtc_stat.(PN)(iseg), WG_outCOI_stat.(PN)(iseg), WG_inCOI_stat.(PN)(iseg)] = WG_wtcobj_trans.wavelet_coherence_toolbox;
-
-    figure(hfigs.Number);
-    title([ATOMIC_platform ': ' datestr(time(1)) '~' datestr(time(end))]);
-    
-    
-    xc_savefig(gcf,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
-        '_coherence_transformed_boxcox_SST_and_' wind_varn '.jpg'], [0, 0, 10 8]);
-    
-    pause(0.5)
-    close all;
-    
-    
-    
-    
-    %% make use of information obtained from wtc_stat:
-    
-    
-
-    
 end
 
+figure(7); clf;
+hold on;
+bar(WG_seglens, 'FaceAlpha',0.3)
 
-% save output for plotting purpose;
-svdataname = ['WGs_wavecoherence_stat_SST_and_' wind_varn '.mat'];
-save([svdatadir filesep svdataname],'WG_wtc_stat','WG_outCOI_stat','WG_inCOI_stat');
+%% put these segment into the wavelet coherence scripts:
+WGs_xres = 1; 
+WGs_name = {'WG247','WG245'};
+varnlist = { 'wind_speed', 'wind_direction','u_algtraj'};
+svfig = false;
+for iv = 3 %1:length(varnlist)
+    wind_varn = varnlist{iv};
+    
+    clear WG_wtc_stat WG_outCOI_stat WG_inCOI_stat
+    for iwg = 1:2
+        WGN = WGs_name{iwg};
+        
+        eval(['inobj = ' WGN '_alongwind_segobj_remapped;']);     % how would the sampling resolution and remapping resolution change the results?
+        
+        for iseg = 1:length(inobj.Value)
+            %validID = ~isnan(ts1);
+            ts1 =inobj.Value(iseg).sea_water_temperature;
+            %ts1= ts1
+            %ts2 = WG247_alongwind_segobj_remapped.Value(iseg).wind_speed;
+            ts2 = inobj.Value(iseg).(wind_varn);
+            traj = inobj.Value(iseg).distance_axis;
+            time = inobj.Value(iseg).time;
+            
+            % mean(diff(time)*86400,'omitnan')/60 %
+            %pause
+            ts_pair.(WGN)(iseg).ts1 = ts1;
+            ts_pair.(WGN)(iseg).ts2 = ts2;
+            ts_pair.(WGN)(iseg).traj = traj;
+            ts_pair.(WGN)(iseg).time = time;
+            
+            ATOMIC_platform = inobj.ATOMIC_platform;
+            
+            labelstr.ts1 = 'SST (^{\circ}C)';
+            labelstr.ts2 = {'along-traj.','wind speed (m/s)'}; %'along-traj.';
+            
+            %%% 0. establish the wavelet object for each glider:
+            WG_wtcobj = ATOMIC_Wavelet(ts1, ts2, traj, time, ATOMIC_platform, WGs_xres);
+            hfig0 = WG_wtcobj.plot_data(labelstr);
+            if svfig
+                xc_savefig(hfig0,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
+                    '_SST_' wind_varn '_record.jpg'], [0, 0, 10 8]);
+            end
+            
+            %%% 1. apply box-cox transform on the data to have normal distribution;
+            [WG_wtcobj_trans, hfig1] = WG_wtcobj.transform_to_normal_distribution(labelstr);
+            if svfig
+                xc_savefig(hfig1,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
+                    '_SST'  wind_varn  '_record_transformed_boxcox.jpg'], [0, 0, 10 8]);
+            end
+            
+            %%% 2. apply the wave coherence toolbox:
+            % [hfigs, wtc_stat(iseg)] = WG247_wtcobj.wavelet_coherence_toolbox;
+            tmpN = strsplit(ATOMIC_platform,'-');
+            PN = [];
+            for k = 1:length(tmpN)
+                PN = [PN tmpN{k}];
+            end
+            
+            [hfigs, WG_wtc_stat.(PN)(iseg), WG_outCOI_stat.(PN)(iseg), WG_inCOI_stat.(PN)(iseg)] = WG_wtcobj_trans.wavelet_coherence_toolbox;
+            
+            figure(hfigs.Number);
+            title([ATOMIC_platform ': ' datestr(time(1)) '~' datestr(time(end))]);
+           
+            if svfig
+                xc_savefig(gcf,figsvdir, [ATOMIC_platform '_seg' num2str(iseg, '%2.2i') ...
+                    '_coherence_transformed_boxcox_SST_and_' wind_varn '.jpg'], [0, 0, 10 8]);
+            end
+            pause(0.5)
+            close all;
+            
+            
+            
+            
+            %% make use of information obtained from wtc_stat:
+            
+            
+            
+            
+        end
+        
+        
+        
+    end
+    
+    % save output for plotting purpose;
+    svdataname = ['WGs_wavecoherence_stat_SST_and_' wind_varn '_xres' num2str(WGs_xres) 'km.mat'];
+    save([svdatadir filesep svdataname],'WG_wtc_stat','WG_outCOI_stat','WG_inCOI_stat','ts_pair');
+end
 
 %% note: several thing to be tested:
 % 1. what resolution should be used for the interpolation? will it affect

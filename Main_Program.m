@@ -18,6 +18,7 @@ addpath([locdir filesep 'rhb/object_oriented_scripts']);
 figsvdir = [locdir filesep 'rhb/object_oriented_scripts/Figs'];
 
 datadir.RHB = [rmtdir_psl filesep 'rhb/nav_met_sea_flux'];
+datadir.RHB = [locdir filesep 'rhb/data'];
 datadir.SWIFTs = [locdir filesep 'SWIFTs_WG'];
 datadir.WaveGlider = [locdir filesep 'SWIFTs_WG'];
 datadir.P3_IR = [locdir filesep 'rhb/data'];
@@ -136,73 +137,163 @@ P3_IR_ds = convert_Kelvin_to_Celcius(P3obj,'SST_IR_est');
 % days of interest: Jan 9 (WG launched); Jan 14(SWIFTs launched); Jan 22
 % (SWIFTs recovered); Jan 30 (SWIFTs launched leg2); Feb 11 (end of leg of RHB);
 
-DOIs ={'Jan09','Jan14','Jan22','Jan30','Feb11'};
+
+%% on the same figure, add 6 SWIFTs traj:
+clf;
+%%%%% Wave Gliders %%%%%
+figppt.fignum =2;
+figppt.scasize = 30;
+figppt.marker = 's';
+figppt.markerEdgeColor = 'none';
+
+figppt.colormap = 'jet';
+cc_datan = 'sea_water_temperature';
+
+trajppt.linewidth=1.4;
+trajppt.linestyle='none';
+trajppt.color=[0 0.4470 0.7410];
+trajppt.markersize=10;
+trajppt.marker='none';
+trajppt.textflag  = false;
+
+hl_WGs=[];
+for ii = 1:NumWGs
+    FN = WGIDs{ii};
+    % if isfield(WGs_grped.(FN), DN)
+    figobj = ATOMIC_dataVisual(WaveGlider_ds.(FN), figppt);
+    [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
+    hl_WGs(ii) = add_trajectory(figobj, trajppt);
+    %  end
+end
+grid on
+set(ax, 'XMinorGrid','on','XMinorTick','on');
+set(ax, 'YMinorGrid','on','YMinorTick','on');
+plot(WG247_alongwind_segobj
+
+title('Wave Gliders');
+set(get(hbar,'xlabel'),'String','SST (^{\circ}C)');
+xc_savefig(gcf,'./','WGs_SST_traj_demo.jpg',[0 0 10 8 ]); 
+
+
+%%%%% SWIFTs %%%%%
+figppt.fignum= 1;
+figppt.scasize = 25;
+figppt.marker = '^';
+figppt.markerEdgeColor = 'none';
+figppt.colormap = 'jet';
+cc_datan = 'sea_water_temperature';
+
+trajppt.linewidth=1.2;
+trajppt.linestyle='none';
+trajppt.color=[0.5 0.5 0.5];
+trajppt.markersize=10;
+trajppt.marker='.';
+trajppt.textflag  = false;
+
+hl_SWF=[];
+for ii = 1:NumSWIFTs
+    FN = floatIDs{ii};
+    %if isfield(SWIFTs_grped.(FN), DN)
+    figobj = ATOMIC_dataVisual(SWIFTs_ds.(FN), figppt);
+    [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
+    hl_SWF(ii) = add_trajectory(figobj, trajppt);
+    
+    %end
+end
+ 
+    
+
+%% For RHB, add the trajectories on the following days of interest.
+DOIs ={'Jan08','Jan09','Jan10',...
+       'Jan18',...
+       'Jan22','Jan23','Jan24', ...       
+       'Feb03','Feb04', ...
+       'Feb06','Feb07','Feb08', ...
+       'Feb10','Feb11','Feb12', ...
+       'Jan14','Jan30'};
+   %'Jan13','Jan14','Jan15',...   % jan14: deployment of swifts
+   %'Jan29','Jan30', ...
+   
 % DOIs = {'Jan18','Feb04','Feb08'};
 % DOIs = {'Jan23'};
+%clf;
 for i = 1:length(DOIs)
     DN = DOIs{i};
     
     %%%%% RHB %%%%%
     %clf;
-    figppt.fignum = i;
+    figppt.fignum = 2;
     figppt.scasize = 50;
     figppt.marker = 'o';
     figppt.colormap = 'jet';
-    cc_datan = 'tsea';
+    cc_datan = 'tskin';
     trajppt.linewidth=1.2;
     trajppt.linestyle='-';
     trajppt.color='k';
     trajppt.markersize=12;
+    trajppt.marker='none';
+    trajppt.textflag  = true;
     
  
-    figobj = ATOMIC_dataVisual(RHB_grped.(DN), figppt);
+   % figobj = ATOMIC_dataVisual(RHB_grped.(DN), figppt);
+     figobj = ATOMIC_dataVisual(RHB_ds, figppt);
     [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
-    hl_RHB = add_trajectory(figobj, trajppt);
-    
-    
-    %%%%% SWIFTs %%%%%
-    figppt.scasize = 40;
-    figppt.marker = '^';
-    figppt.colormap = 'jet';
-    cc_datan = 'sea_water_temperature';
-    
-    trajppt.linewidth=1.2;
-    trajppt.linestyle='--';
-    trajppt.color=[0.5 0.5 0.5];
-    trajppt.markersize=10;
-    
-    hl_SWF=[];
-    for ii = 1:NumSWIFTs
-        FN = floatIDs{ii};
-        if isfield(SWIFTs_grped.(FN), DN)
-            figobj = ATOMIC_dataVisual(SWIFTs_grped.(FN).(DN), figppt);
-            [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
-             hl_SWF(ii) = add_trajectory(figobj, trajppt);
+    %hl_RHB = add_trajectory(figobj, trajppt);
+end
+grid on
+set(ax, 'XMinorGrid','on','XMinorTick','on');
+set(ax, 'YMinorGrid','on','YMinorTick','on');
+axis('equal');
+xlim([-62, -50]);
+ylim([12 16.5]);
+title('RV Ronald H. Brown from Jan-09 to Feb-12 2020')
+% title('RHB and SWIFTs');
+% title('RHB, SWIFTs & WGs');
+set(get(hbar,'xlabel'),'String','SST (^{\circ}C)');
 
-        end
-    end
- 
-    
-    %%%%% Wave Gliders %%%%%
-    figppt.scasize = 40;
-    figppt.marker = 's';
-    figppt.colormap = 'jet';
-    cc_datan = 'sea_water_temperature';
-    
-    trajppt.linewidth=1.4;
-    trajppt.linestyle='-.';
-    trajppt.color=[0 0.4470 0.7410];
-    trajppt.markersize=10;
+xlim = get(ax,'xlim');
+ylim = get(ax,'ylim');
 
-    hl_WGs=[];
-    for ii = 1:NumWGs
-        FN = WGIDs{ii};
-        if isfield(WGs_grped.(FN), DN)
-            figobj = ATOMIC_dataVisual(WGs_grped.(FN).(DN), figppt);
-            [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
-             hl_WGs(ii) = add_trajectory(figobj, trajppt);
-        end
-    end
+set(ax,'xlim',xlim);
+set(ax,'ylim',ylim);
+
+xc_savefig(gcf,'./','RHB_SST_traj_demo.jpg',[0 0 10 8 ]); 
+
+xc_savefig(gcf,'./','RHB_SWIFTs_SST_traj_demo.jpg',[0 0 10 8 ]); 
+xc_savefig(gcf,'./','RHB_SWIFTs_WGs_SST_traj_demo.jpg',[0 0 10 8 ]); 
+   
+xc_savefig(gcf,'./','RHB_SWIFTs_SST_traj_demo_upstream_trade_leg1.jpg',[0 0 10 8 ]); 
+xc_savefig(gcf,'./','RHB_SWIFTs_WGs_SST_traj_demo_upstream_trade_leg1.jpg',[0 0 10 8 ]); 
+
+
+
+figppt.scasize = 30;
+figppt.marker = 's';
+figppt.markerEdgeColor = 'none';
+
+figppt.colormap = 'jet';
+cc_datan = 'sea_water_temperature';
+
+trajppt.linewidth=1.4;
+trajppt.linestyle='none';
+trajppt.color=[0 0.4470 0.7410];
+trajppt.markersize=10;
+trajppt.marker='none';
+trajppt.textflag  = false;
+
+hl_WGs=[];
+for ii = NumWGs
+    FN = WGIDs{ii};
+    % if isfield(WGs_grped.(FN), DN)
+    figobj = ATOMIC_dataVisual(WaveGlider_ds.(FN), figppt);
+    [hfig, hbar, ax]=collect_dataset_on_map(figobj, cc_datan);
+    hl_WGs(ii) = add_trajectory(figobj, trajppt);
+    %  end
+end
+
+
+
+
 
 
     
@@ -264,7 +355,7 @@ DOIs ={'Jan09','Jan14','Jan22','Jan30','Feb11'};
 % plot timeseries
 DOIs =  {'Jan18','Jan23','Feb04','Feb08'};
 
-for i = 3; %1:length(DOIs)
+for i = 1:length(DOIs)
     DN = DOIs{i};
     
     %%%%% RHB %%%%%

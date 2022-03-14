@@ -11,11 +11,12 @@ classdef ATOMIC_dataVisual
         linewidth = 1.2
         fontsize = 14
         fignum = 1
-        coastline_data='/Users/xchen/Documents/MATLAB/shallow_convection/Obsv/satellite_SLA/EastCoast_shoreline.mat';
+        coastline_data='/Users/xchen/Documents/MATLAB/shallow_convection/Obsv/satellite_SLA/NACoast_shoreline_h.mat';
         scasize = 20
         marker = 'o';
         linestyle = '-';
         color = 'k';
+        markerEdgeColor ='none';
     end
     
     
@@ -48,7 +49,8 @@ classdef ATOMIC_dataVisual
            h = figure(obj.fignum); hold on;
            % make use of coastline data:
            load(obj.coastline_data);
-           plot(EastCoast.lon, EastCoast.lat, '-k', 'linewidth',1);
+           plot(coast.lon, coast.lat, '-k', 'linewidth',1.5);
+           patch(coast.lon, coast.lat, [0.5 0.5 0.5]);
            % plot the measurement track colorcoded by time of the
            % measurement.
            data = obj.data;
@@ -58,7 +60,7 @@ classdef ATOMIC_dataVisual
                cc_data = mean(cc_data(1:10,:),1,'omitnan');
            end
            scatter(data.lon, data.lat, obj.scasize, cc_data, 'filled',...
-               'marker', obj.marker);
+               'marker', obj.marker,'markerEdgeColor',obj.markerEdgeColor);
            
            xlabel('Longitude (^{\circ}E)');
            ylabel('Latitude (^{\circ}N)');
@@ -86,14 +88,18 @@ classdef ATOMIC_dataVisual
            h = figure(obj.fignum); hold on;
 
            data = obj.data;
-           hl = plot(data.lon, data.lat, 'linestyle',lineppt.linestyle, ...
-               'linewidth',lineppt.linewidth, 'color',lineppt.color);
+           hl = plot(data.lon(1:5:end), data.lat(1:5:end), 'linestyle',lineppt.linestyle, ...
+               'linewidth',lineppt.linewidth, 'color',lineppt.color, 'marker', lineppt.marker);
            
            plot(data.lon(1), data.lat(1), 'p','color', lineppt.color, ...
                'markersize', lineppt.markersize, 'linewidth',lineppt.linewidth);
            
            plot(data.lon(end), data.lat(end), 'd','color', lineppt.color, ...
                'markersize', lineppt.markersize, 'linewidth',lineppt.linewidth);
+           
+           if lineppt.textflag
+               text(mean(data.lon), mean(data.lat)*1.005,datestr(data.local_time(1),'mmmdd'),'fontsize',12,'fontweight','bold');
+           end
            
            
            
@@ -137,6 +143,32 @@ classdef ATOMIC_dataVisual
            datetick('x','HH:MM');
            ylabel('SST (^{\circ}C)');
            set(gca,'fontsize',obj.fontsize);
+       end
+       
+       % --------------------- Function # 3: --------------------------- %
+       % plot the along trajectory velocity:
+       function hfig = plot_current_along_track(obj)
+           hfig = figure(obj.fignum); hold on;
+           data = obj.data;
+           nseg = length(data)
+           for i = 1:nseg
+           traj = obj.data(i).distance_axis;
+           subplot(2,nseg,i)%1+2*(i-1)
+           yyaxis left
+           plot(traj, data(i).tsea - mean(data(i).tsea,'omitnan'),'--r');hold on
+           plot(traj, data(i).cspd,'-');
+           hold on;
+           yyaxis right
+           plot(traj, data(i).cdir);
+           
+           subplot(2,nseg,i+nseg)
+           cdir_cart = get_cartesian_direction(data(i).cdir,'Meteo');
+           cu= data(i).cspd.*cosd(cdir_cart);
+           cv = data(i).cspd.*sind(cdir_cart);
+           quiver(data(i).lon, data(i).lat, fliplr(cu), fliplr(cv),'k');
+           hold on;
+           scatter(data(i).lon, data(i).lat, 30, fliplr(data(i).tsea),'filled');
+           end
        end
 
        
