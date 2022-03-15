@@ -71,7 +71,7 @@ classdef ATOMIC_Wavelet
 
             
             % purpose: plot the two input "time series" for a view.
-            hfigs = figure;
+            hfigs = figure(1); clf;
             subplot(2,1,1)
             yyaxis left
             h(1) = plot(traj,x,'linewidth',1.2);
@@ -121,6 +121,8 @@ classdef ATOMIC_Wavelet
             obj_trans.ts2 = trans.ts2;
             
             traj = obj.traj;
+            
+            % ideailly, I should test if it is a normal distribution.
             
             % add plots to compare the time series before transformation
             % and after transformation;
@@ -199,14 +201,18 @@ classdef ATOMIC_Wavelet
             
            [Rsq, normalized_period, normalized_scale, coi, wtcsig, Wxy]=wtc(x_dtr, y_dtr);           % figure out what do period and scale stand for. 
 
-            hfigs = figure(1); clf;
+            hfigs = figure(11); clf;
+            % set size of the figure;
+            set(gcf, 'pos',[616   495   653   523]);
             wtc(x_dtr, y_dtr);
             ax = gca;
             xlabel('Downwind Distance (km)');
             ylabel('Wavelength (km)');
             set(gca,'fontsize',14)
             
+            pause(0.05);
             xtick = ax.XTick;
+            
             ax.XTickLabel = xtick.* obj.xres;
             ytick = ax.YTick;
             ax.YTickLabel = 2.^ytick .* obj.xres;

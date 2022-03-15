@@ -213,6 +213,8 @@ classdef ATOMIC_dataProcess
                 data(iseg).traj = traj;
                 
                 % add computation of the course of direction:
+                % potential improvement: use central difference to compute
+                % the trajectory direction.
                 dy = dlat.* 111E3;
                 dx = dlon.* 111E3.*cosd(mid_lat);
                 
@@ -840,8 +842,12 @@ classdef ATOMIC_dataProcess
         %%%%% =========== function: re-orient data sequence so it points to 
         %%%%% ===========            downwind direction.       ======= %%%%
         function obj_new = reorient_data_sequence(obj)
+            %% Function description:
             % determine wheter or not the data sequence needs to be
-            % rotated:
+            % rotated.
+            % Reorientation (by flipping) is 
+            % --------------------------------------------------------- %
+            
             data = obj.Value;
             obj_new = obj;
             
@@ -881,7 +887,7 @@ classdef ATOMIC_dataProcess
                                 end
                                 
                                 figure(12);
-                                if strcmp(x, 'sea_water_temperature') || strcmp(x,'tsea') || strcmp(x,'wspd_10N')
+                                if strcmp(x, 'sea_water_temperature') || strcmp(x,'tsea') || strcmp(x,'wspd')
                                     plot(data(iseg).(x));
 
                                     hold on;
@@ -916,38 +922,77 @@ classdef ATOMIC_dataProcess
         
         %%%% =================   function #2b   ===================== %%%%
         %%%% Purpose: project data onto the RHB or wave glider trajectory.
-        function  obj = project_wind_onto_trajectory(obj, opt)
-            switch nargin
-                
-                case 1
-                    copt = false;
-                    %wopt = true;
-                case 2
-                    copt = opt;
-                   % wopt = true;
-                
-            end
+        function  obj = project_wind_onto_trajectory(obj, varargin)
+%             switch nargin
+%                 
+%                 case 1
+%                     copt = false;
+%                     %wopt = true;
+%                 case 2
+%                     copt = opt;
+%                    % wopt = true;
+%                 
+%             end
             
+            %%%%% modification on March 15:
+            % parse the inputs instead:
+            % input include: current option, and wind speed variable names:
+            % (true wind without stability correction versus 10-m
+            % extrapolated with with stability correction.)
+            p = inputParser;
             
+            default_wspd_varn = 'wspd';            % this will be consistent with the wave glider.
+            default_copt = false;
+            % define parsing rules:
+            addRequired(p,'obj', @isobject); 
+            addParameter(p,'copt', default_copt, @islogical);     % treat current as wind for projection.
+            checkString = @(s) any(strcmpi(s, {'wspd_10N','wspd'}));
+            addParameter(p,'wspd_varn', default_wspd_varn, checkString);
+            
+            % parse inputs:
+            parse(p, obj, varargin{:});
+            obj = p.Results.obj;
+            copt = p.Results.copt;
+            wspd_varn = p.Results.wspd_varn;
+
             data = obj.Value;
             
             nsegs = length(data);
             
-            
-            wind_direction_name_list = {'wind_direction','wdir'};
-            wind_speed_namelist = {'wind_speed','wspd_10N'};
-            
-            fieldn = fieldnames(data(1));
-            wdir_name_bool = ismember(wind_direction_name_list, fieldn);
-            wdir_VN = wind_direction_name_list{wdir_name_bool};
-            
-            wspd_name_bool = ismember(wind_speed_namelist, fieldn);
-            wspd_VN = wind_speed_namelist{wspd_name_bool};
-            
-            for iseg = 1:nsegs
-                [wu_alg, wv_crx] = compute_algtraj_crxtraj_velocity_component(wspd_VN, wdir_VN);
-                data(iseg).u_algtraj = wu_alg;
-                data(iseg).v_crxtraj = wv_crx;
+            if ~copt      % default is to project wind.
+                wind_direction_name_list = {'wind_direction','wdir'};
+                wind_speed_namelist = {'wind_speed', wspd_varn};     % 'wspd: true wind speed relative to earth'; I think it is better to use the true wind speed to be consistent with the wave gliders.
+                
+                fieldn = fieldnames(data(1));
+                wdir_name_bool = ismember(wind_direction_name_list, fieldn);
+                wdir_VN = wind_direction_name_list{wdir_name_bool};
+                
+                wspd_name_bool = ismember(wind_speed_namelist, fieldn);
+                wspd_VN = wind_speed_namelist{wspd_name_bool};
+                
+                for iseg = 1:nsegs
+                    [wu_alg, wv_crx] = compute_algtraj_crxtraj_velocity_component(wspd_VN, wdir_VN);
+                    
+                    if strcmp(obj.ATOMIC_platform,'RHB')
+                        strinfo = strsplit(wspd_varn, '_');
+                        if length(strinfo)==1
+                            alg_varn = 'u_algtraj_true';
+                            crx_varn = 'v_crxtraj_true';
+                            
+                        else
+                            alg_varn = ['u_algtraj_' strinfo{2}];
+                            crx_varn = ['v_crxtraj_' strinfo{2}];
+                        end
+                        
+                    else  % don't have derived 10-m neutral wind information from the wave gliders.
+                        % so true wind speed was used.
+                        alg_varn = 'u_algtraj_true';
+                        crx_varn = 'v_crxtraj_true';
+                    end
+                              
+                    data(iseg).(alg_varn) = wu_alg;
+                    data(iseg).(crx_varn) = wv_crx;
+                end
             end
             
             
@@ -974,6 +1019,11 @@ classdef ATOMIC_dataProcess
            %% turn the following code into a nested function:           
            % for iseg = 1:nsegs
             function [u_algtraj, v_crxtraj]=compute_algtraj_crxtraj_velocity_component(spd_VN, dir_VN)   
+                %% Note:
+                %  after projection, the wind component in the down-wind
+                %  direction needs to be positive for my purpose to compute
+                %  the wind divergence in downwind direction.
+                %
                 trajdir_cart = data(iseg).trajdir_cart;
                 trajdir_cart(trajdir_cart<0) = trajdir_cart(trajdir_cart<0)+360;
 
@@ -985,8 +1035,13 @@ classdef ATOMIC_dataProcess
                 against_locs = cosd(dtheta)<0;
              
                 ang = dtheta;
-                %ang(against_locs) = (180-abs(dtheta(against_locs))).*sign(dtheta(against_locs));  % I doubt this again.
-                ang(against_locs) = (dtheta(against_locs));                % updated to this version (Jan 24, 2022, the wind direction of the project along traj seems correct this way.
+                % what is the purpose of this line? --> eqv. to flpping the direction of the traj to be more align with downwind
+                % direction. (180- theta); also this works because the wind direction is mostly NE or SE
+                ang(against_locs) = (180-abs(dtheta(against_locs))).*sign(dtheta(against_locs)+180); % earlier version with undocumented reasons.
+                % sign is used to make sure the direction of the cross-wind component follow the traditional (y-positive) definition.
+                %ang(against_locs) = (dtheta(against_locs));                % updated to this version (Jan 24, 2022, the wind direction of the project along traj seems correct this way.
+                
+                % ang is used to project the total wind speed to get the cross and along transect wind.
                 
                 u_algtraj = data(iseg).(spd_VN) .* cosd(ang);              % <0
                 v_crxtraj = data(iseg).(spd_VN) .* sind(ang);              % > 0?
@@ -995,6 +1050,7 @@ classdef ATOMIC_dataProcess
                 utmp = data(iseg).(spd_VN) .* cosd(dir_cart);
                 vtmp = data(iseg).(spd_VN).* sind(dir_cart);
                 
+                trajdir_cart(against_locs) = trajdir_cart(against_locs)+180;
                 ualg_x = u_algtraj .* (cosd(trajdir_cart));                % is the direction of this correct??
                 ualg_y = u_algtraj .* sind(trajdir_cart);
                 
@@ -1036,7 +1092,7 @@ classdef ATOMIC_dataProcess
             % better to call a function for this purpose.
             omg = 2*pi/86400;   % rad/s
             curflag = true;
-            obj = project_wind_onto_trajectory(obj, curflag);
+            obj = project_wind_onto_trajectory(obj, 'copt', curflag);
             
             obj_new = obj;
 
@@ -1074,7 +1130,103 @@ classdef ATOMIC_dataProcess
                 
             
         end
+
         
+        %%%% =================   function # ??   ===================== %%%%
+        %%%% Purpose: compute along RHB traj. SST gradient and SST
+        %%%% Laplacian.
+        %%%% Inputs: obj, methodstr: "center" or "forward"
+        function obj = compute_grad_Laplacian(obj, varn, varargin)
+            
+            % build input parser to allow additional optional variables:
+            p = inputParser;
+            addRequired(p, 'obj', @isobject);
+            addRequired(p, 'varn', @ischar);
+            checkString = @(s) any(strcmpi(s, {'gradient','Laplacian','both'}));
+            default_type = 'both';
+            addParameter(p, 'type',default_type, checkString);
+            
+            parse(p, obj, varn, varargin{:});
+            obj = p.Results.obj;
+            varn = p.Results.varn;
+            type = p.Results.type;
+            % ----------------------------------------------------------- %
+            
+            data = obj.Value;
+            
+            nseg = length(data);
+            
+            grad_varn = [varn '_grad'];
+            lapcn_varn = [varn '_curv'];  % laplacian.
+            
+            
+            for iseg = 1:nseg
+                
+                V = data(iseg).(varn);
+                
+                xres = data(iseg).distance_axis(2)-data(iseg).distance_axis(1);   %km
+                
+                if strcmpi(type, 'both') || strcmpi(type,'gradient')
+                    % compute gradient using center difference except at the edge;
+                    SSTgrad = compute_gradient_with_central_diff(V, xres);
+                    data(iseg).(grad_varn) = SSTgrad;
+                end
+                
+                % repeat the step above to compute laplacian: (curvature).
+                if strcmpi(type, 'both') || strcmpi(type, 'Laplacian')
+                    SSTlaplacian = compute_gradient_with_central_diff(SSTgrad, xres);                    
+                    % add new data variables:
+                    data(iseg).(lapcn_varn) = SSTlaplacian;
+                end
+                
+            end
+            
+            obj.Value = data;
+            
+            
+            
+            
+            %%% nested function for the central difference:
+            function data_grad = compute_gradient_with_central_diff(dataIn, xres)
+                % input has to has uniform spatial increment. 
+                for i = 1:length(dataIn)
+                    if i~=1 && i~=length(dataIn)
+                        dT(i) = dataIn(i+1) - dataIn(i-1);
+                    else
+                        if i==1
+                            dT(i) = dataIn(i+1) - dataIn(i);
+                        else
+                            dT(i) = dataIn(i) - dataIn(i-1);
+                        end
+                    end
+                end
+                
+                data_grad = dT./xres;
+            end
+            
+            
+        end
+        
+        
+        function obj = compute_effective_SSTrate_of_change(obj, SSTvarn, wndvarn)
+            % the rate of change of SST felt by an air parcel.
+            data = obj.Value;
+            nseg = length(data);
+            
+            new_varn = [SSTvarn '_tendency'];
+            SSTgrad_varn = [SSTvarn '_grad'];
+            
+            for iseg = 1:nseg
+                dSST_dt = abs(data(iseg).(wndvarn)) .* data(iseg).(SSTgrad_varn);  % absoulte is just to ensure that the wind is in the downwind coordinate, so it is always positive.)
+                data(iseg).(new_varn) = dSST_dt;
+                
+            end
+            
+            obj.Value = data;
+        end
+            
+            
+
         
         %%%% =================   function # ??   ===================== %%%%
         %%%% Purpose: break long data down into sections
@@ -1102,6 +1254,7 @@ classdef ATOMIC_dataProcess
 %             end
 %             
 %         end
+
        
 
         %%%%% =========== Utility function: saving an output;  ======= %%%%
